@@ -22,13 +22,12 @@ def compute_momentum(prices_df, lookback=252, skip=21):
             score        — normalized score between 0 and 1
             signal       — long (+1), neutral (0), or short (-1)
     """
-    # Most recent price is skip days ago (avoid last month)
+    # Drop assets with missing prices at either endpoint
     recent = prices_df.iloc[-skip]
-
-    # Starting price is (lookback + skip) days ago
     past = prices_df.iloc[-(lookback + skip)]
-
-    # Raw 12-1 momentum return per asset
+    valid = recent.notna() & past.notna()
+    recent = recent[valid]
+    past = past[valid]
     raw_return = (recent - past) / past
 
     # Rank assets (1 = worst momentum, N = best momentum)
@@ -52,7 +51,7 @@ def compute_momentum(prices_df, lookback=252, skip=21):
     # Package results
     result = pd.DataFrame({
         "raw_return": raw_return.round(4),
-        "rank": rank.astype(int),
+        "rank": rank.astype("Int64"),
         "score": score.round(4),
         "signal": signal,
     }).sort_values("rank", ascending=False)
