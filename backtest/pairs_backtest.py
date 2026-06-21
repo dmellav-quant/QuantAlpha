@@ -11,16 +11,15 @@ def run_pairs_backtest(prices_df, pairs=None, hedge_window=60,
     """Backtest all pairs with volatility-scaled position sizing.
 
     Each pair's position size is scaled so that all pairs contribute
-    equal volatility to the portfolio (vol targeting). This prevents
-    high-vol pairs like GLD/SLV from dominating low-vol pairs like TLT/IEF.
+    equal volatility to the portfolio (vol targeting).
 
     Args:
         vol_target: Target annualized volatility per pair (default 10%)
     """
-    from signals.mean_reversion.pairs_trading import compute_pair_signal, PAIRS
+    from signals.mean_reversion.pairs_trading import compute_pair_signal
 
     if pairs is None:
-        pairs = PAIRS
+        pairs = []
 
     daily_returns = prices_df.pct_change()
     pair_return_series = {}
@@ -48,12 +47,11 @@ def run_pairs_backtest(prices_df, pairs=None, hedge_window=60,
                       daily_returns[asset_b] * sig_b * 0.5).fillna(0)
 
         # Volatility scaling: scale each pair to target vol
-        # Use 60-day rolling vol, shift by 1 to avoid lookahead
         rolling_vol = raw_return.rolling(60).std() * np.sqrt(252)
         rolling_vol = rolling_vol.shift(1).fillna(rolling_vol.mean())
         rolling_vol = rolling_vol.replace(0, rolling_vol.mean())
 
-        scale = (vol_target / rolling_vol).clip(0.1, 5.0)  # cap leverage at 5x
+        scale = (vol_target / rolling_vol).clip(0.1, 5.0)
         scaled_return = raw_return * scale
 
         pair_return_series[pair_name] = scaled_return
@@ -61,7 +59,6 @@ def run_pairs_backtest(prices_df, pairs=None, hedge_window=60,
     pair_returns_df = pd.DataFrame(pair_return_series)
     n_pairs = len(pair_returns_df.columns)
 
-    # Equal weight across pairs
     strategy_returns = pair_returns_df.sum(axis=1) / n_pairs
 
     first_valid = pair_returns_df.replace(0, np.nan).dropna(how="all").index[0]
@@ -118,15 +115,29 @@ def run_pairs_backtest(prices_df, pairs=None, hedge_window=60,
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
-    from signals.mean_reversion.pairs_trading import PAIRS
+    from signals.mean_reversion.pairs_trading import find_cointegrated_pairs
     from data.loaders.equity import get_prices
 
-    TICKERS = list(set([t for pair in PAIRS for t in pair]))
+    TICKERS = [
+        "SPY", "QQQ", "IWM", "XLF", "XLE", "XLV", "XLK", "XLI",
+        "GLD", "SLV", "USO",
+        "TLT", "IEF", "HYG", "LQD",
+        "EEM", "EFA", "EWZ", "FXI", "EWJ",
+        "NVDA", "AMD", "INTC", "QCOM",
+        "MSFT", "AAPL", "GOOG", "META",
+        "GS", "BAC",
+    ]
+
     print("Downloading prices...")
     prices_df = get_prices(TICKERS, start="2015-01-01")
+    prices_df = prices_df.dropna(axis=1, thresh=int(len(prices_df) * 0.9))
+
+    print("\nFinding cointegrated pairs...")
+    coint_pairs = find_cointegrated_pairs(prices_df, pvalue_threshold=0.05, top_n=10)
+    pairs = [(a, b) for a, b, _ in coint_pairs]
 
     print("\nRunning pairs backtest...")
-    results = run_pairs_backtest(prices_df)
+    results = run_pairs_backtest(prices_df, pairs=pairs)
 
     print("\n=== Performance Summary ===")
     print(results["summary"])
@@ -140,11 +151,11 @@ if __name__ == "__main__":
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 8),
                              gridspec_kw={"height_ratios": [3, 1]})
-    fig.suptitle("QuantAlpha — Pairs Trading (Vol-Scaled) vs Buy-and-Hold",
+    fig.suptitle("QuantAlpha — Cointegration Pairs Trading vs Buy-and-Hold",
                  fontsize=14, fontweight="bold")
 
     ax1 = axes[0]
-    ax1.plot(eq.index, eq.values, label="Pairs Strategy (vol-scaled)",
+    ax1.plot(eq.index, eq.values, label="Cointegration Pairs Strategy",
              color="#4CAF50", linewidth=1.8)
     ax1.plot(bh.index, bh.values, label="Buy-and-Hold",
              color="#FF9800", linewidth=1.8, linestyle="--")
@@ -172,7 +183,7 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.savefig(
-        r"C:\Users\Asus\Documents\Diego Mella Valerio\Projects\QuantAlpha\notebooks\pairs_backtest.png",
+        r"C:\Users\Asus\Documents\Diego Mella Valerio\Projects\QuantAlpha\notebooks\pairs_coint_backtest.png",
         dpi=150, bbox_inches="tight"
     )
     plt.show()

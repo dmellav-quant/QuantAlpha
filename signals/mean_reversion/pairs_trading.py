@@ -5,18 +5,11 @@ from itertools import combinations
 
 sys.path.insert(0, r"C:\Users\Asus\Documents\Diego Mella Valerio\Projects\QuantAlpha")
 
-
-# ── Install statsmodels if needed:
-# "C:\Users\Asus\AppData\Local\spyder-6\envs\spyder-runtime\python.exe" -m pip install statsmodels
 from statsmodels.tsa.stattools import coint
 
 
 def find_cointegrated_pairs(prices_df, pvalue_threshold=0.05, top_n=10):
     """Test all possible pairs for cointegration using Engle-Granger test.
-
-    Only pairs with a statistically significant cointegration relationship
-    (p-value < threshold) are selected. This replaces manual pair selection
-    with a data-driven approach.
 
     Args:
         prices_df:         DataFrame of closing prices
@@ -35,9 +28,8 @@ def find_cointegrated_pairs(prices_df, pvalue_threshold=0.05, top_n=10):
         series_a = prices_df[a].dropna()
         series_b = prices_df[b].dropna()
 
-        # Align on common dates
         common = series_a.index.intersection(series_b.index)
-        if len(common) < 252:   # need at least 1 year of data
+        if len(common) < 252:
             continue
 
         try:
@@ -47,7 +39,6 @@ def find_cointegrated_pairs(prices_df, pvalue_threshold=0.05, top_n=10):
         except Exception:
             continue
 
-    # Sort by p-value (most cointegrated first)
     cointegrated.sort(key=lambda x: x[2])
     return cointegrated[:top_n]
 
@@ -78,7 +69,14 @@ def compute_zscore(spread, window=20):
 def compute_pair_signal(price_a, price_b,
                         hedge_window=60, zscore_window=20,
                         entry_threshold=1.5, exit_threshold=0.25):
-    """Full pipeline for one pair: hedge ratio → spread → z-score → signal."""
+    """Full pipeline for one pair: hedge ratio → spread → z-score → signal.
+
+    Signal logic:
+        z > +entry  → short spread: short A, long B   (signal_a = -1)
+        z < -entry  → long spread:  long A, short B   (signal_a = +1)
+        |z| < exit  → flat: close position            (signal_a =  0)
+        otherwise   → hold current position
+    """
     hedge_ratio = compute_hedge_ratio(price_a, price_b, window=hedge_window)
     spread = compute_spread(price_a, price_b, hedge_ratio)
     zscore = compute_zscore(spread, window=zscore_window)
@@ -141,7 +139,6 @@ def compute_all_pairs(prices_df, pairs=None, **kwargs):
 if __name__ == "__main__":
     from data.loaders.equity import get_prices
 
-    # Use a focused universe — cointegration works best within asset classes
     TICKERS = [
         "SPY", "QQQ", "IWM", "XLF", "XLE", "XLV", "XLK", "XLI",
         "GLD", "SLV", "USO",
@@ -149,7 +146,7 @@ if __name__ == "__main__":
         "EEM", "EFA", "EWZ", "FXI", "EWJ",
         "NVDA", "AMD", "INTC", "QCOM",
         "MSFT", "AAPL", "GOOG", "META",
-        "GS", "BAC", "XLF",
+        "GS", "BAC",
     ]
 
     print("Downloading prices...")
