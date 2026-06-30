@@ -1,8 +1,6 @@
 # QuantAlpha
 
-A systematic quantitative trading and portfolio management framework built in Python.
-Developed as part of my path toward an MFE program and a career in quantitative finance
-at a top-tier bank or hedge fund.
+A systematic quantitative trading and portfolio management framework built in Python. Developed as the technical centerpiece for MFE program applications and a career as a quant trader / portfolio manager.
 
 ## Author
 Diego Mella Valerio — MSc Financial Engineering, UAI Chile
@@ -11,134 +9,133 @@ GitHub: [dmellav-quant](https://github.com/dmellav-quant)
 
 ---
 
+## Overview
+
+QuantAlpha implements the full pipeline of a systematic trading operation: multi-asset data ingestion, signal generation, vectorized backtesting, risk analytics, portfolio optimization, and institutional-grade reporting. Every strategy is evaluated honestly — including documented limitations and a full factor decomposition that shows where returns actually come from.
+
+---
+
 ## Project Structure
 
     QuantAlpha/
     ├── data/
     │   └── loaders/
-    │       └── equity.py                   ← Multi-asset price downloader (yfinance)
+    │       └── equity.py                ← Multi-asset price downloader (yfinance + curl_cffi)
     ├── signals/
     │   ├── momentum/
-    │   │   └── cross_sectional.py          ← 12-1 cross-sectional momentum signal
-    │   └── mean_reversion/
-    │       └── pairs_trading.py            ← Cointegration-based pairs trading signal
+    │   │   └── cross_sectional.py       ← 12-1 cross-sectional momentum signal
+    │   ├── mean_reversion/
+    │   │   └── pairs_trading.py         ← Engle-Granger cointegration pairs trading
+    │   └── options/
+    │       └── vix_regime.py            ← VIX volatility regime filter
     ├── backtest/
-    │   ├── vectorized.py                   ← Vectorized backtest engine (momentum)
-    │   └── pairs_backtest.py               ← Vol-scaled pairs backtest engine
+    │   ├── vectorized.py                ← Vectorized backtest engine (momentum)
+    │   └── pairs_backtest.py            ← Vol-scaled pairs backtest engine
+    ├── risk/
+    │   ├── metrics.py                   ← VaR, CVaR, Calmar, rolling risk metrics
+    │   └── factors.py                   ← Fama-French 5-factor + momentum regression
     ├── notebooks/
-    │   ├── 01_momentum_backtest.py         ← Momentum backtest runner + chart
-    │   ├── momentum_backtest.png           ← Momentum equity curve
-    │   └── pairs_coint_backtest.png        ← Pairs trading equity curve
+    │   ├── 01_momentum_backtest.py      ← Momentum backtest runner
+    │   ├── tearsheet.py                 ← 6-page institutional tearsheet (PDF)
+    │   ├── QuantAlpha_Tearsheet.pdf     ← Generated tearsheet
+    │   └── *.png                        ← Strategy & risk charts
     ├── documentation/
-    │   └── QuantAlpha_Summary.docx         ← Project summary + metrics glossary
-    ├── risk/                               ← Coming next: VaR, CVaR, Calmar, rolling Sharpe
-    ├── portfolio/                          ← Planned: mean-variance + risk parity optimizer
-    ├── LIMITATIONS.md                      ← Honest assessment of strategy limitations
+    │   ├── QuantAlpha_Summary.docx          ← Project summary + metrics glossary
+    │   ├── QuantAlpha_Factor_Analysis.docx  ← Factor decomposition writeup
+    │   └── QuantAlpha_Tearsheet_Analysis.docx ← Full tearsheet guide (with charts)
+    ├── LIMITATIONS.md                   ← Honest assessment of every strategy
     └── README.md
 
 ---
 
 ## Strategies Implemented
 
-### Strategy 1 — Cross-Sectional Momentum
-
-**Universe:** 56 assets across US equities, international equities, fixed income, commodities, real estate, and volatility.
-
-**Signal:** Classic 12-1 momentum — each asset's return over the past 12 months (skipping the last month to avoid short-term reversal). Assets ranked cross-sectionally. Top third = Long, bottom third = Short, middle = Neutral.
-
-**Rebalance:** Monthly (every 21 trading days)
-
-#### Backtest Results (2015–2026)
+### 1 — Cross-Sectional Momentum
+12-1 momentum (12-month return, skip last month) across a 56-asset multi-asset universe spanning US/international equities, fixed income, commodities, real estate and volatility. Top third long, bottom third short, monthly rebalance.
 
 | Metric | Momentum L/S | Equal-Weight B&H |
 |---|---|---|
-| CAGR | 9.48% | 20.44% |
-| Sharpe | 0.57 | 1.20 |
+| CAGR | 9.08% | 20.27% |
+| Sharpe | 0.55 | 1.19 |
 | Max Drawdown | -25.94% | -28.20% |
-| Ann. Volatility | 19.04% | 16.71% |
+| Calmar | 0.35 | 0.72 |
 
-![Momentum Equity Curve](notebooks/momentum_backtest.png)
+![Momentum Backtest](notebooks/momentum_backtest.png)
 
-> **Note:** The equal-weight benchmark is heavily influenced by exceptional individual stocks (NVDA, META, AAPL). The momentum strategy's key advantage is its lower max drawdown and market-neutral long/short structure. Against SPY alone (~12% CAGR), the strategy is more competitive.
+### 2 — Pairs Trading (Mean Reversion)
+Engle-Granger cointegration test across all asset pairs; the top 10 statistically cointegrated pairs are traded via rolling-OLS hedge ratio and z-score entry/exit, with volatility-scaled position sizing. The strategy is market-neutral with very low volatility — and its underperformance is honestly attributed to look-ahead bias and post-2002 strategy decay (see LIMITATIONS.md).
+
+### 3 — VIX Regime Filter (Options Signal)
+Uses VIX implied volatility to classify the market into risk-on / elevated / risk-off regimes. Key finding: the momentum strategy earns a **Sharpe of 1.53 when VIX < 20** but loses money when VIX is elevated — proving the alpha is regime-dependent.
 
 ---
 
-### Strategy 2 — Pairs Trading (Mean Reversion)
+## Risk & Attribution
 
-**Approach:** Engle-Granger cointegration test across all possible pairs in a 30-asset universe. Top 10 statistically cointegrated pairs selected. For each pair, a rolling OLS hedge ratio is computed, spread normalized into a z-score, and positions entered when z > 1.5 (short spread) or z < -1.5 (long spread). Position sizing is volatility-scaled so each pair targets 10% annualized vol.
+### Risk Module (`risk/metrics.py`)
+Historical, parametric, and Cornish-Fisher VaR; CVaR (Expected Shortfall); Calmar; rolling Sharpe / volatility / VaR / drawdown. Directly informed by professional VaR-engine experience at Tanner.
 
-**Universe:** SPY, QQQ, IWM, sector ETFs, GLD, SLV, USO, TLT, IEF, HYG, LQD, EEM, EFA, EWZ, FXI, EWJ, NVDA, AMD, INTC, QCOM, MSFT, AAPL, GOOG, META, GS, BAC
+### Factor Analysis (`risk/factors.py`)
+Fama-French 5-factor + Carhart momentum regression on strategy returns:
 
-**Top cointegrated pairs found:** SLV/AMD, EWJ/GOOG, XLK/XLI, EFA/GOOG, GLD/GS, XLV/QCOM, GLD/AMD, GLD/GOOG, QQQ/XLI, AMD/GOOG
-
-#### Backtest Results (2015–2026)
-
-| Metric | Pairs Strategy | Buy-and-Hold |
+| Factor | Beta | t-stat |
 |---|---|---|
-| CAGR | -0.53% | 21.04% |
-| Sharpe | -0.10 | 1.11 |
-| Max Drawdown | -12.93% | -29.21% |
-| Ann. Volatility | 4.25% | 18.83% |
+| Momentum | +0.68 | 46.1 |
+| Market | +0.46 | 33.5 |
+| Size / Value / Profit. / Invest. | small (-0.07 to -0.09) | significant |
 
-![Pairs Trading Equity Curve](notebooks/pairs_coint_backtest.png)
-
-> **Honest assessment:** The pairs strategy underperforms due to look-ahead bias in pair selection and structural decay of pairs trading alpha in US equities post-2002. The strategy generates extremely low volatility (4.25%) and shallow drawdowns (-12.93%), confirming its market-neutral character. Full analysis in [LIMITATIONS.md](LIMITATIONS.md).
+**Alpha: -0.21% (not significant) · R² = 0.61.** The strategy is statistically a momentum-factor replica with unintended net-long market exposure and no true alpha — a rigorous, honest performance attribution.
 
 ---
 
-## Key Technical Concepts
+## Institutional Tearsheet
 
-| Concept | Where implemented |
-|---|---|
-| Cross-sectional ranking | signals/momentum/cross_sectional.py |
-| 12-1 momentum (skip period) | signals/momentum/cross_sectional.py |
-| Rolling OLS hedge ratio | signals/mean_reversion/pairs_trading.py |
-| Z-score normalization | signals/mean_reversion/pairs_trading.py |
-| Engle-Granger cointegration | signals/mean_reversion/pairs_trading.py |
-| Volatility scaling | backtest/pairs_backtest.py |
-| Vectorized backtesting | backtest/vectorized.py |
-| CAGR, Sharpe, Max Drawdown, Calmar | backtest/vectorized.py, backtest/pairs_backtest.py |
+A 6-page PDF (`notebooks/QuantAlpha_Tearsheet.pdf`) combining equity curves, rolling risk metrics, portfolio optimization (risk parity + mean-variance), full risk report, VIX regime analysis, and factor exposures. A companion guide in `documentation/` explains every chart and metric with embedded visuals.
+
+---
+
+## Key Technical Concepts Demonstrated
+
+Cross-sectional ranking · 12-1 momentum · Engle-Granger cointegration · rolling OLS hedge ratios · z-score mean reversion · volatility targeting · vectorized backtesting · Historical/Parametric/Cornish-Fisher VaR · CVaR / Expected Shortfall · Calmar & rolling metrics · risk parity · mean-variance optimization · Fama-French factor attribution · VIX regime filtering.
 
 ---
 
 ## Roadmap
 
-- [x] Data pipeline (multi-asset, yfinance + curl_cffi)
-- [x] Cross-sectional momentum signal (12-1, 56-asset universe)
-- [x] Vectorized backtest engine
-- [x] Pairs trading signal (Engle-Granger cointegration)
-- [x] Volatility-scaled pairs backtest
-- [x] Honest limitations documentation
-- [ ] **Next: Risk module** — rolling Sharpe, VaR, CVaR, Calmar, factor exposures
-- [ ] Portfolio optimizer — mean-variance + risk parity
-- [ ] Options signal — implied vol surface
-- [ ] Full institutional tear sheet
+- [x] Multi-asset data pipeline (yfinance + curl_cffi)
+- [x] Cross-sectional momentum signal + vectorized backtest
+- [x] Pairs trading (Engle-Granger cointegration) + vol-scaled backtest
+- [x] VIX regime filter (options signal)
+- [x] Risk module (VaR, CVaR, Calmar, rolling metrics)
+- [x] Fama-French 5-factor + momentum attribution
+- [x] 6-page institutional tearsheet PDF
+- [x] Full documentation + honest limitations
 - [ ] Rolling out-of-sample cointegration (fix look-ahead bias)
+- [ ] Transaction cost & slippage model
+- [ ] Market-beta hedge overlay (neutralize the +0.46 market exposure)
+- [ ] Combined multi-signal portfolio (momentum + mean reversion + regime)
 
 ---
 
 ## Dependencies
 
-    yfinance
-    curl_cffi
-    pandas
-    numpy
-    matplotlib
-    statsmodels
+    yfinance · curl_cffi · pandas · numpy · matplotlib
+    statsmodels · scipy · pandas-datareader
 
-Install via:
+Install:
 
-    "C:\Users\Asus\AppData\Local\spyder-6\envs\spyder-runtime\python.exe" -m pip install yfinance curl_cffi pandas numpy matplotlib statsmodels
+    "C:\Users\Asus\AppData\Local\spyder-6\envs\spyder-runtime\python.exe" -m pip install yfinance curl_cffi pandas numpy matplotlib statsmodels scipy pandas-datareader
 
 ---
 
 ## Documentation
 
-See [documentation/QuantAlpha_Summary.docx](documentation/QuantAlpha_Summary.docx) for a full project summary including metric definitions, strategy explanations, and MFE interview talking points.
-
-See [LIMITATIONS.md](LIMITATIONS.md) for an honest assessment of what works, what does not, and why.
+- `documentation/QuantAlpha_Summary.docx` — project summary + metrics glossary
+- `documentation/QuantAlpha_Factor_Analysis.docx` — factor decomposition writeup
+- `documentation/QuantAlpha_Tearsheet_Analysis.docx` — full tearsheet guide with charts
+- `LIMITATIONS.md` — honest assessment of what works, what doesn't, and why
 
 ---
 
-*Target: complete QuantAlpha v1.0 before MFE applications (2026-2027 cycle)*
-*Author: Diego Mella Valerio | June 2026*
+*QuantAlpha v1.0 · Author: Diego Mella Valerio · June 2026*
+*Target: MFE applications 2026–2027 cycle (Baruch · CMU · Columbia · Imperial)*
